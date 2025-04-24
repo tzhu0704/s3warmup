@@ -26,18 +26,15 @@ Options:
   -j JOBS      Number of parallel jobs (default: 32)
   -s SIZE      Batch size for progress reporting (default: 10000)
   -d DIR       Directory to process (required)
+```
 
 ### 2. lustre_release.sh
 A utility script for releasing Lustre files to S3 storage, freeing up local storage space while maintaining data accessibility through HSM.
-
 #### Features
-Manages file release operations to S3
-
-Verifies file status before release
-
-Supports batch processing
-
-Progress monitoring capabilities
+- Manages file release operations to S3
+- Verifies file status before release
+- Supports batch processing
+- Progress monitoring capabilities
 
 #### Usage
 
@@ -49,4 +46,4 @@ Options:
   -j JOBS      Number of parallel jobs (default: 32)
   -s SIZE      Batch size for progress reporting (default: 10000)
   -d DIR       Directory to process (required)
-
+```
