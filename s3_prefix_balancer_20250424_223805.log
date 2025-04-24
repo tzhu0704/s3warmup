@@ -1,0 +1,13 @@
+[2025-04-24 22:38:05] Starting S3 prefix balancing
+[2025-04-24 22:38:07] Source: s3://mynextcloudstore/myimages2
+[2025-04-24 22:38:07] Target: s3://mynextcloudstore/myimages2_optimized
+[2025-04-24 22:38:07] Using 32 parallel jobs
+[2025-04-24 22:38:09] Listing objects in S3 bucket: mynextcloudstore with prefix: myimages2
+[2025-04-24 22:38:12] Found      100 objects in S3
+[2025-04-24 22:38:12] Analyzing current distribution...
+[2025-04-24 22:38:12] Total size of all objects: 54688208 bytes
+[2025-04-24 22:38:12] Using specified target prefix count: 16
+[2025-04-24 22:38:12] Creating balanced distribution plan...
+[2025-04-24 22:38:13] Generated 16 new prefixes
+[2025-04-24 22:38:15] Balanced plan created for 100 objects
+[2025-04-24 22:38:15] Executing balanced distribution plan...
