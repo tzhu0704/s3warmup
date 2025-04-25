@@ -6,6 +6,7 @@ LOG_FILE="${LOG_DIR}/lustre_warmup_$(date +%Y%m%d_%H%M%S).log"
 PARALLEL_JOBS=32  # Number of parallel restore jobs
 BACKGROUND=false
 BATCH_SIZE=10000  # Process files in batches for progress reporting
+HSM_RESTORE_BATCH=5  # Number of files to process in each hsm_restore command
 
 # Create logs directory if it doesn't exist
 mkdir -p "$LOG_DIR"
@@ -26,22 +27,24 @@ format_time() {
 
 # Function to show usage
 usage() {
-    echo "Usage: $0 [-b] [-j JOBS] [-s BATCH_SIZE] -d DIRECTORY"
+    echo "Usage: $0 [-b] [-j JOBS] [-s BATCH_SIZE] [-n HSM_BATCH] -d DIRECTORY"
     echo "  -b           Run in background mode (nohup)"
     echo "  -j JOBS      Number of parallel jobs (default: 32)"
     echo "  -s SIZE      Batch size for progress reporting (default: 10000)"
+    echo "  -n SIZE      Number of files to process in each hsm_restore command (default: 5)"
     echo "  -d DIR       Directory to process (required)"
     exit 1
 }
 
 # Parse command line arguments
 DIRECTORY=""
-while getopts "bd:j:s:h" opt; do
+while getopts "bd:j:s:n:h" opt; do
     case $opt in
         b) BACKGROUND=true ;;
         d) DIRECTORY=$OPTARG ;;
         j) PARALLEL_JOBS=$OPTARG ;;
         s) BATCH_SIZE=$OPTARG ;;
+        n) HSM_RESTORE_BATCH=$OPTARG ;;
         h) usage ;;
         *) usage ;;
     esac
@@ -64,8 +67,9 @@ if [ "$BACKGROUND" = true ] && [ -z "$NOHUP_ACTIVE" ]; then
 fi
 
 # Main process
-log "Starting Lustre release process for directory: $DIRECTORY"
+log "Starting Lustre warmup process for directory: $DIRECTORY"
 log "Using $PARALLEL_JOBS parallel jobs"
+log "Using batch size of $HSM_RESTORE_BATCH files per hsm_restore command"
 START_TIME=$(date +%s)
 
 # Create temporary directory for processing
@@ -141,6 +145,7 @@ fi
 
 # Process files in parallel using xargs
 log "Starting warmup process with $PARALLEL_JOBS parallel jobs"
+log "Processing $HSM_RESTORE_BATCH files per hsm_restore command"
 
 # Create a named pipe for real-time progress monitoring
 PROGRESS_PIPE="$TEMP_DIR/progress_pipe"
@@ -186,25 +191,33 @@ if [ "$RELEASED_FILES" -gt 100000 ]; then
     
     # Process each batch
     for batch_file in "$TEMP_DIR"/batch_*; do
-        cat "$batch_file" | xargs -P "$PARALLEL_JOBS" -n 1 bash -c '
-            file="$0"
-            if lfs hsm_restore "$file" 2>/dev/null; then
-                echo "SUCCESS $file"
+        cat "$batch_file" | xargs -P "$PARALLEL_JOBS" -n "$HSM_RESTORE_BATCH" bash -c '
+            files=("$@")
+            if lfs hsm_restore "${files[@]}" 2>/dev/null; then
+                for file in "${files[@]}"; do
+                    echo "SUCCESS $file"
+                done
             else
-                echo "FAILED $file"
+                for file in "${files[@]}"; do
+                    echo "FAILED $file"
+                done
             fi
-        ' >> "$PROGRESS_PIPE"
+        ' bash >> "$PROGRESS_PIPE"
     done
 else
     # Process all files at once for smaller lists
-    cat "$TEMP_RELEASED_FILES" | xargs -P "$PARALLEL_JOBS" -n 1 bash -c '
-        file="$0"
-        if lfs hsm_restore "$file" 2>/dev/null; then
-            echo "SUCCESS $file"
+    cat "$TEMP_RELEASED_FILES" | xargs -P "$PARALLEL_JOBS" -n "$HSM_RESTORE_BATCH" bash -c '
+        files=("$@")
+        if lfs hsm_restore "${files[@]}" 2>/dev/null; then
+            for file in "${files[@]}"; do
+                echo "SUCCESS $file"
+            done
         else
-            echo "FAILED $file"
+            for file in "${files[@]}"; do
+                echo "FAILED $file"
+            done
         fi
-    ' > "$PROGRESS_PIPE"
+    ' bash > "$PROGRESS_PIPE"
 fi
 
 # Close the pipe to signal the monitor that we're done
@@ -250,4 +263,5 @@ if [ "$BACKGROUND" = true ]; then
     touch "${LOG_FILE}.completed"
     log "Background job completed. Marker file created: ${LOG_FILE}.completed"
 fi
+
 

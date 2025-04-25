@@ -25,6 +25,7 @@ Options:
   -b           Run in background mode (using nohup)
   -j JOBS      Number of parallel jobs (default: 32)
   -s SIZE      Batch size for progress reporting (default: 10000)
+  -n SIZE      Number of files to process in each hsm_restore command (default: 5)
   -d DIR       Directory to process (required)
 ```
 
@@ -46,6 +47,7 @@ Options:
   -b           Run in background mode (using nohup)
   -j JOBS      Number of parallel jobs (default: 32)
   -s SIZE      Batch size for progress reporting (default: 10000)
+  -n SIZE      Number of files to process in each hsm_release command (default: 5)
   -d DIR       Directory to process (required)
 ```
 
