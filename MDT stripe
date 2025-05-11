@@ -1,0 +1,41 @@
+aws fsx describe-data-repository-tasks --filters Name=file-system-id,Values=fs-08c254e19d1ce1cf3
+
+aws fsx describe-data-repository-associations --filters Name=file-system-id,Values=fs-017284bb69d72834b
+
+aws fsx describe-data-repository-associations --filters Name=file-system-id,Values=fs-017284bb69d72834b | grep -i "mynextcloudstore"
+
+aws fsx describe-data-repository-associations --filters Name=file-system-id,Values=fs-017284bb69d72834b | grep -i "data-sync-storage-us"
+
+nfs4_setfacl -a A:g:ab_ab@beigenecorp.net:rwx /usrfiles/bgcrh/bdata
+setfacl -m g:ab_ab:rwx /usrfiles/bgcrh/bdata
+nfs4_setfacl -a A:g:ab_ab@beigenecorp.net:rwx /usrfiles/bgcrh/bdata
+
+nfs4_setfacl -a A:g:abab@beigenecorp.net:rwx /usrfiles/bgcrh/bdata
+
+aws fsx describe-data-repository-associations --filters Name=file-system-id,Values=fs-017284bb69d72834b
+
+aws fsx describe-data-repository-associations --filters Name=file-system-id,Values=fs-017284bb69d72834b | grep -i dra-09aaaf2856d5f3b43
+
+{
+            "AssociationId": "dra-09aaaf2856d5f3b43",
+            "ResourceARN": "arn:aws:fsx:us-east-1:509399592849:association/fs-08c254e19d1ce1cf3/dra-09aaaf2856d5f3b43",
+            "FileSystemId": "fs-08c254e19d1ce1cf3",
+            "Lifecycle": "AVAILABLE",
+            "FileSystemPath": "/myimages1",
+            "DataRepositoryPath": "s3://mynextcloudstore/myimages2_optimized/",
+            "BatchImportMetaDataOnCreate": false,
+            "ImportedFileChunkSize": 1024,
+            "Tags": [],
+            "CreationTime": "2025-05-06T23:19:39.489000+08:00"
+        },
+
+  aws fsx update-data-repository-association \
+  --association-id dra-09aaaf2856d5f3b43 \
+  --s3 '{"AutoExportPolicy":{"Events":[]}}'
+
+
+  aws fsx create-data-repository-task \
+  --file-system-id fs-08c254e19d1ce1cf3 \
+  --type EXPORT_TO_REPOSITORY \
+  --paths "/images_balanced" \
+  --report '{"Enabled": true, "Format": "REPORT_CSV_20191124", "Scope": "FAILED_FILES_ONLY"}'
