@@ -36,31 +36,6 @@ if [ -z "$DIRECTORY" ]; then
     usage
 fi
 
-# Ensure numeric parameters have valid values
-if [ -z "$JOBS" ] || ! [[ "$JOBS" =~ ^[0-9]+$ ]]; then
-    echo "Error: Invalid number of jobs, using default: 32"
-    JOBS=32
-elif [ "$JOBS" -lt 1 ]; then
-    echo "Error: Number of jobs must be at least 1, using default: 32"
-    JOBS=32
-fi
-
-if [ -z "$BATCH_SIZE" ] || ! [[ "$BATCH_SIZE" =~ ^[0-9]+$ ]]; then
-    echo "Error: Invalid batch size, using default: 10000"
-    BATCH_SIZE=10000
-elif [ "$BATCH_SIZE" -lt 1 ]; then
-    echo "Error: Batch size must be at least 1, using default: 10000"
-    BATCH_SIZE=10000
-fi
-
-if [ -z "$ARCHIVE_BATCH" ] || ! [[ "$ARCHIVE_BATCH" =~ ^[0-9]+$ ]]; then
-    echo "Error: Invalid archive batch size, using default: 5"
-    ARCHIVE_BATCH=5
-elif [ "$ARCHIVE_BATCH" -lt 1 ]; then
-    echo "Error: Archive batch size must be at least 1, using default: 5"
-    ARCHIVE_BATCH=5
-fi
-
 # Create temporary files
 ARCHIVE_LIST=$(mktemp)
 PROGRESS_FILE=$(mktemp)
@@ -70,13 +45,22 @@ trap 'rm -f "$ARCHIVE_LIST" "$PROGRESS_FILE"' EXIT
 build_archive_list() {
     local dir="$1"
     echo "Finding files in $dir that need archiving..."
+    
+    # Find files that are not already archived
     find "$dir" -type f -exec lfs hsm_state {} \; 2>/dev/null | \
         grep -v "exists archived" | \
-        awk '{print $1}' > "$ARCHIVE_LIST"
+        awk '{print $1}' | sed 's/:$//' > "$ARCHIVE_LIST"
     
-    # Check if the list is empty or has errors
-    if [ ! -s "$ARCHIVE_LIST" ]; then
-        echo "Warning: No files found for archiving or error accessing files"
+    # Debug: Show what we found
+    local found=$(wc -l < "$ARCHIVE_LIST")
+    echo "Found $found files that need archiving"
+    
+    # Debug: Show the first few files
+    if [ "$found" -gt 0 ]; then
+        echo "First few files to archive:"
+        head -n 5 "$ARCHIVE_LIST"
+    else
+        echo "Warning: No files found for archiving"
     fi
 }
 
@@ -94,20 +78,6 @@ update_progress() {
     fi
     
     echo $((current + increment)) > "$PROGRESS_FILE"
-}
-
-# Function to archive a batch of files
-archive_batch() {
-    local files=("$@")
-    if [ ${#files[@]} -gt 0 ]; then
-        if sudo lfs hsm_archive "${files[@]}" 2>/dev/null; then
-            update_progress ${#files[@]}
-        else
-            echo "Error archiving batch starting with ${files[0]}" >&2
-            # Still update progress to avoid getting stuck
-            update_progress ${#files[@]}
-        fi
-    fi
 }
 
 # Function to process files
@@ -132,80 +102,53 @@ process_files() {
     echo "Starting archive of $total_files files..."
     echo "Using $JOBS parallel jobs with $ARCHIVE_BATCH files per archive command"
 
-    # Start progress monitoring in background
-    (
-        while true; do
-            if [ ! -f "$PROGRESS_FILE" ]; then
-                echo "Progress file not found, monitoring stopped"
-                break
-            fi
-            
-            processed=$(cat "$PROGRESS_FILE" 2>/dev/null || echo "0")
-            # Ensure processed is a number
-            if ! [[ "$processed" =~ ^[0-9]+$ ]]; then
-                processed=0
-            fi
-            
-            if [ "$processed" -gt 0 ] && [ "$((processed % BATCH_SIZE))" -eq 0 ]; then
-                if [ "$total_files" -gt 0 ]; then
-                    percent=$((processed * 100 / total_files))
-                    echo "Progress: $processed / $total_files files ($percent%)"
-                else
-                    echo "Progress: $processed files"
-                fi
-            fi
-            
-            if [ "$processed" -ge "$total_files" ] && [ "$total_files" -gt 0 ]; then
-                echo "Completed: $total_files / $total_files files (100%)"
-                break
-            fi
-            
-            sleep 5
-        done
-    ) &
-    MONITOR_PID=$!
-
-    # Process files
+    # Process files in batches
     local processed=0
-    while [ "$processed" -lt "$total_files" ]; do
+    while read -r file; do
+        # Collect a batch of files
         batch_files=()
         for ((i=0; i<ARCHIVE_BATCH; i++)); do
-            if [ "$processed" -ge "$total_files" ]; then
-                break
-            fi
-            
-            file=$(sed -n "$((processed + 1))p" "$ARCHIVE_LIST" 2>/dev/null)
             if [ -n "$file" ] && [ -f "$file" ]; then
                 batch_files+=("$file")
-                processed=$((processed + 1))
             else
-                # Skip invalid files but count them as processed
-                processed=$((processed + 1))
-                continue
+                echo "Warning: File not found or not accessible: $file"
+            fi
+            
+            # Read the next file, break if no more files
+            if ! read -r file; then
+                break
             fi
         done
         
+        # Process the batch if not empty
         if [ ${#batch_files[@]} -gt 0 ]; then
-            archive_batch "${batch_files[@]}" &
+            if sudo lfs hsm_archive "${batch_files[@]}" 2>/dev/null; then
+                processed=$((processed + ${#batch_files[@]}))
+                echo "$processed" > "$PROGRESS_FILE"
+                
+                # Show progress at regular intervals
+                if [ $((processed % BATCH_SIZE)) -eq 0 ] || [ "$processed" -eq "$total_files" ]; then
+                    percent=$((processed * 100 / total_files))
+                    echo "Progress: $processed / $total_files files ($percent%)"
+                fi
+            else
+                echo "Error archiving batch starting with ${batch_files[0]}"
+                processed=$((processed + ${#batch_files[@]}))
+                echo "$processed" > "$PROGRESS_FILE"
+            fi
             
             # Control the number of parallel jobs
             while [ "$(jobs -r | wc -l)" -ge "$JOBS" ]; do
                 sleep 0.5
             done
         fi
-    done
+    done < "$ARCHIVE_LIST"
 
     # Wait for all background jobs to complete
     wait
 
-    # Kill the progress monitor
-    if [ -n "$MONITOR_PID" ]; then
-        kill $MONITOR_PID 2>/dev/null || true
-        wait $MONITOR_PID 2>/dev/null || true
-    fi
-
     # Final progress report
-    echo "Archive process completed: $total_files files processed"
+    echo "Archive process completed: $processed / $total_files files"
 }
 
 # Main execution
@@ -215,8 +158,12 @@ build_archive_list "$DIRECTORY"
 if [ "$BACKGROUND" = true ]; then
     echo "Running in background mode"
     LOG_FILE="archive_$(date +%Y%m%d_%H%M%S).log"
-    nohup bash -c "$(declare -f update_progress archive_batch process_files build_archive_list); PROGRESS_FILE='$PROGRESS_FILE' ARCHIVE_LIST='$ARCHIVE_LIST' BATCH_SIZE=$BATCH_SIZE JOBS=$JOBS ARCHIVE_BATCH=$ARCHIVE_BATCH process_files" > "$LOG_FILE" 2>&1 &
+    
+    # Run the same script in background mode
+    nohup "$0" -j "$JOBS" -s "$BATCH_SIZE" -n "$ARCHIVE_BATCH" -d "$DIRECTORY" > "$LOG_FILE" 2>&1 &
+    
     echo "Process started in background. Check $LOG_FILE for progress"
+    exit 0
 else
     process_files
 fi
