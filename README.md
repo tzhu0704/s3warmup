@@ -4,6 +4,41 @@ This repository contains scripts for managing Lustre HSM (Hierarchical Storage M
 
 ## Scripts Overview
 
+### 0. s3_analyze.sh
+
+A utility script for analyzing S3 bucket directory structure and providing Lustre striping recommendations.
+
+#### Features
+- Analyzes S3 bucket directory structure at specified depth
+- Identifies large directories that may benefit from Lustre striping
+- Provides specific striping recommendations based on analysis
+- Supports background execution mode
+- Generates detailed reports with statistics
+
+#### Usage
+```bash
+./s3_analyze.sh [-b] <bucket> <prefix> <depth> [sample_size]
+
+Options:
+  -b           Run in background mode (using nohup)
+  bucket       S3 bucket name
+  prefix       Prefix path to analyze, use '/' for root directory
+  depth        Recursion depth for analysis
+  sample_size  Number of objects to sample per directory (default: 1000)
+```
+
+#### Example
+```bash
+# Analyze bucket with default settings
+./s3_analyze.sh my-bucket / 3
+
+# Run analysis in background mode
+./s3_analyze.sh -b my-bucket /data 2
+
+# Analyze with larger sample size
+./s3_analyze.sh my-bucket /data 3 5000
+```
+
 ### 1. lustre_warmup.sh
 
 A utility script for warming up Lustre HSM archived data from S3 back to Lustre filesystem.
